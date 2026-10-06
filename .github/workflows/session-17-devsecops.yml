@@ -204,11 +204,13 @@ jobs:
           path: /tmp
       - name: Create a kind cluster
         uses: helm/kind-action@v1
+        with:
+          cluster_name: s17
       - name: Load the image into the cluster
         run: |
           docker load -i /tmp/image.tar
           docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ needs.push.outputs.image }}
-          kind load docker-image ${{ needs.push.outputs.image }}
+          kind load docker-image ${{ needs.push.outputs.image }} --name s17
       - name: Apply manifests
         run: |
           sed -i "s|__IMAGE__|${{ needs.push.outputs.image }}|" k8s/deployment.yaml
