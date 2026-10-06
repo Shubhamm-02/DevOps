@@ -138,6 +138,10 @@ jobs:
     name: Security Gate
     needs: [test, sast, sca, secret-scan, image-scan]
     runs-on: ubuntu-latest
+    # This job never checks out the code, so the project folder does not exist here
+    defaults:
+      run:
+        working-directory: .
     steps:
       - name: All required security checks passed
         run: |
@@ -157,6 +161,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+    # This job never checks out the code, so the project folder does not exist here
+    defaults:
+      run:
+        working-directory: .
     outputs:
       image: ${{ steps.name.outputs.image }}
     steps:
