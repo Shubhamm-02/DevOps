@@ -214,7 +214,7 @@ gh run watch
 Open the failed **Test Application** job to see why.
 
 ```bash
-gh run view --log-failed | head -30
+gh run view "$(gh run list --limit 1 --json databaseId --jq '.[0].databaseId')" --log-failed | head -30
 ```
 
 ![pytest failure in the log: assert 16 == 15](screenshots/image%20copy%2012.png)

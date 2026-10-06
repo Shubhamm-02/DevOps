@@ -200,7 +200,7 @@ git push
 gh run watch
 ```
 
-Or open the **Actions** tab on GitHub.
+Or open the **Actions** tab on GitHub. `gh run view` needs a run ID when its output is piped, so the commands below look up the latest run first.
 
 ![Actions tab with the Session 17 run started](screenshots/image%20copy%208.png)
 
@@ -229,7 +229,7 @@ Go to the repository **Security** tab, then **Code scanning**.
 ### 4.4 Published image and deployment
 
 ```bash
-gh run view --log | grep -A12 "Smoke test"
+gh run view "$(gh run list --limit 1 --json databaseId --jq '.[0].databaseId')" --log | grep -A12 "Smoke test"
 ```
 
 On the repository home page, open **Packages** to see the image tagged with the commit SHA.
@@ -240,6 +240,8 @@ On the repository home page, open **Packages** to see the image tagged with the 
 
 ## Part 5: Prove the security gates really block
 
+Before you start, commit and push everything on `main` (your screenshots and README edits). Each demo adds only the one file it names, so nothing else leaks into the demo branch.
+
 Each demo uses its own branch and pull request, so `main` stays clean. A pull request runs every check but never pushes or deploys. After each demo, close the pull request and go back to `main`.
 
 ### 5.1 Secret scan blocks a leaked key
@@ -247,17 +249,19 @@ Each demo uses its own branch and pull request, so `main` stays clean. A pull re
 ```bash
 git switch -c demo/secret-leak
 printf 'API_KEY = "%s"\n' "$(openssl rand -base64 36 | tr -d '/+=\n' | cut -c1-32)" > session-17-devsecops/app/leaked_config.py
-git add -A && git commit -m "Demo: commit a fake API key"
+git add session-17-devsecops/app/leaked_config.py
+git commit -m "Demo: commit a fake API key"
 git push -u origin demo/secret-leak
 gh pr create --fill --base main
+sleep 15
 gh pr checks --watch
 ```
 
 ![Secret Scan failed, Docker Build and later jobs skipped](screenshots/image%20copy%2015.png)
 
 ```bash
-gh run view --log-failed | grep -iE "leak|RuleID|File"
-gh pr close --delete-branch
+gh run view "$(gh run list --branch demo/secret-leak --limit 1 --json databaseId --jq '.[0].databaseId')" --log-failed | grep -iE "leak|RuleID|File"
+gh pr close demo/secret-leak --delete-branch
 git switch main
 ```
 
@@ -270,17 +274,19 @@ git switch main
 ```bash
 git switch -c demo/vulnerable-dependency
 sed -i '' 's/^Flask==.*/Flask==2.2.4/' session-17-devsecops/requirements.txt
-git add -A && git commit -m "Demo: pin an old vulnerable Flask"
+git add session-17-devsecops/requirements.txt
+git commit -m "Demo: pin an old vulnerable Flask"
 git push -u origin demo/vulnerable-dependency
 gh pr create --fill --base main
+sleep 15
 gh pr checks --watch
 ```
 
 ![SCA job failed, later jobs skipped](screenshots/image%20copy%2017.png)
 
 ```bash
-gh run view --log-failed | grep -E "flask|PYSEC"
-gh pr close --delete-branch
+gh run view "$(gh run list --branch demo/vulnerable-dependency --limit 1 --json databaseId --jq '.[0].databaseId')" --log-failed | grep -E "flask|PYSEC"
+gh pr close demo/vulnerable-dependency --delete-branch
 git switch main
 ```
 
@@ -293,17 +299,19 @@ git switch main
 ```bash
 git switch -c demo/unsafe-code
 printf 'def run(expression):\n    return eval(expression)\n' > session-17-devsecops/app/unsafe.py
-git add -A && git commit -m "Demo: add unsafe eval"
+git add session-17-devsecops/app/unsafe.py
+git commit -m "Demo: add unsafe eval"
 git push -u origin demo/unsafe-code
 gh pr create --fill --base main
+sleep 15
 gh pr checks --watch
 ```
 
 ![SAST job failed on Bandit](screenshots/image%20copy%2019.png)
 
 ```bash
-gh run view --log-failed | grep -E "B307|Severity|Location"
-gh pr close --delete-branch
+gh run view "$(gh run list --branch demo/unsafe-code --limit 1 --json databaseId --jq '.[0].databaseId')" --log-failed | grep -E "B307|Severity|Location"
+gh pr close demo/unsafe-code --delete-branch
 git switch main
 ```
 
@@ -316,17 +324,19 @@ git switch main
 ```bash
 git switch -c demo/old-base-image
 sed -i '' 's/^FROM python:3.12-slim/FROM python:3.9-slim/' session-17-devsecops/Dockerfile
-git add -A && git commit -m "Demo: use an old base image"
+git add session-17-devsecops/Dockerfile
+git commit -m "Demo: use an old base image"
 git push -u origin demo/old-base-image
 gh pr create --fill --base main
+sleep 15
 gh pr checks --watch
 ```
 
 ![Image scan job failed, Security Gate skipped](screenshots/image%20copy%2021.png)
 
 ```bash
-gh run view --log-failed | grep -E "Total|HIGH|CRITICAL" | head -10
-gh pr close --delete-branch
+gh run view "$(gh run list --branch demo/old-base-image --limit 1 --json databaseId --jq '.[0].databaseId')" --log-failed | grep -E "Total|HIGH|CRITICAL" | head -10
+gh pr close demo/old-base-image --delete-branch
 git switch main
 ```
 
