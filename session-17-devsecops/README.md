@@ -200,7 +200,7 @@ git push
 gh run watch
 ```
 
-Or open the **Actions** tab on GitHub.
+Or open the **Actions** tab on GitHub. `gh run view` needs a run ID when its output is piped, so the commands below look up the latest run first.
 
 ![Actions tab with the Session 17 run started](screenshots/image%20copy%208.png)
 
@@ -229,7 +229,7 @@ Go to the repository **Security** tab, then **Code scanning**.
 ### 4.4 Published image and deployment
 
 ```bash
-gh run view --log | grep -A12 "Smoke test"
+gh run view "$(gh run list --limit 1 --json databaseId --jq '.[0].databaseId')" --log | grep -A12 "Smoke test"
 ```
 
 On the repository home page, open **Packages** to see the image tagged with the commit SHA.
@@ -256,7 +256,7 @@ gh pr checks --watch
 ![Secret Scan failed, Docker Build and later jobs skipped](screenshots/image%20copy%2015.png)
 
 ```bash
-gh run view --log-failed | grep -iE "leak|RuleID|File"
+gh run view "$(gh run list --branch demo/secret-leak --limit 1 --json databaseId --jq '.[0].databaseId')" --log-failed | grep -iE "leak|RuleID|File"
 gh pr close --delete-branch
 git switch main
 ```
@@ -279,7 +279,7 @@ gh pr checks --watch
 ![SCA job failed, later jobs skipped](screenshots/image%20copy%2017.png)
 
 ```bash
-gh run view --log-failed | grep -E "flask|PYSEC"
+gh run view "$(gh run list --branch demo/vulnerable-dependency --limit 1 --json databaseId --jq '.[0].databaseId')" --log-failed | grep -E "flask|PYSEC"
 gh pr close --delete-branch
 git switch main
 ```
@@ -302,7 +302,7 @@ gh pr checks --watch
 ![SAST job failed on Bandit](screenshots/image%20copy%2019.png)
 
 ```bash
-gh run view --log-failed | grep -E "B307|Severity|Location"
+gh run view "$(gh run list --branch demo/unsafe-code --limit 1 --json databaseId --jq '.[0].databaseId')" --log-failed | grep -E "B307|Severity|Location"
 gh pr close --delete-branch
 git switch main
 ```
@@ -325,7 +325,7 @@ gh pr checks --watch
 ![Image scan job failed, Security Gate skipped](screenshots/image%20copy%2021.png)
 
 ```bash
-gh run view --log-failed | grep -E "Total|HIGH|CRITICAL" | head -10
+gh run view "$(gh run list --branch demo/old-base-image --limit 1 --json databaseId --jq '.[0].databaseId')" --log-failed | grep -E "Total|HIGH|CRITICAL" | head -10
 gh pr close --delete-branch
 git switch main
 ```
