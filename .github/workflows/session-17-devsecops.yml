@@ -1,0 +1,217 @@
+name: Session 17 DevSecOps Pipeline
+
+# Workflows must live at the repo root. The paths filter limits this one to
+# session-17-devsecops/, and working-directory makes "run" steps start inside it.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "session-17-devsecops/**"
+      - ".github/workflows/session-17-devsecops.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "session-17-devsecops/**"
+      - ".github/workflows/session-17-devsecops.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: session-17-devsecops
+
+env:
+  IMAGE_NAME: session17-python
+
+jobs:
+  # 1. Build the app and run unit tests
+  test:
+    name: Build and Unit Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Build check (byte-compile the application)
+        run: python -m compileall -q app
+      - name: Run unit tests with coverage
+        run: pytest --cov=app --cov-report=term-missing
+
+  # 2. SAST: scan our own source code
+  sast:
+    name: SAST (Bandit and CodeQL)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Bandit (fails on medium or high severity findings)
+        run: |
+          pip install bandit
+          bandit -r app -ll
+      - name: CodeQL init
+        uses: github/codeql-action/init@v4
+        with:
+          languages: python
+          source-root: session-17-devsecops
+      - name: CodeQL analyze
+        uses: github/codeql-action/analyze@v4
+
+  # 3. SCA: scan third-party dependencies
+  sca:
+    name: SCA (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Audit dependencies for known vulnerabilities
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
+
+  # 4. Secret scanning: look for committed credentials
+  secret-scan:
+    name: Secret Scan (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Scan project files for secrets
+        run: |
+          docker run --rm -v "$PWD:/scan" zricethezav/gitleaks:latest \
+            detect --no-git --source /scan --redact --verbose
+
+  # 5. Build the image ONCE and share it with the later jobs
+  docker-build:
+    name: Docker Build
+    needs: [test, sast, sca, secret-scan]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build image
+        run: docker build -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
+      - name: Save image to a tar file
+        run: docker save ${{ env.IMAGE_NAME }}:${{ github.sha }} -o /tmp/image.tar
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/image.tar
+          retention-days: 1
+
+  # 6. Container image scanning
+  image-scan:
+    name: Container Image Scan (Trivy)
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+      - name: Scan the exact image that was built
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          input: /tmp/image.tar
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  # 7. Security gate: every check above must be green
+  security-gate:
+    name: Security Gate
+    needs: [test, sast, sca, secret-scan, image-scan]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required security checks passed
+        run: |
+          echo "Unit tests:      passed"
+          echo "SAST:            passed"
+          echo "SCA:             passed"
+          echo "Secret scan:     passed"
+          echo "Image scan:      passed"
+          echo "Security gate OPEN. The image may be published."
+
+  # 8. Push the same image to GitHub Container Registry (main only)
+  push:
+    name: Push Image to GHCR
+    needs: security-gate
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Work out the lowercase image name
+        id: name
+        run: |
+          REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "image=ghcr.io/${REPO}/${{ env.IMAGE_NAME }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+      - name: Load, tag and push
+        run: |
+          docker load -i /tmp/image.tar
+          docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ steps.name.outputs.image }}
+          docker push ${{ steps.name.outputs.image }}
+
+  # 9. Deploy to Kubernetes (a temporary kind cluster inside the runner)
+  deploy:
+    name: Deploy to Kubernetes
+    needs: push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+      - name: Create a kind cluster
+        uses: helm/kind-action@v1
+      - name: Load the image into the cluster
+        run: |
+          docker load -i /tmp/image.tar
+          docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ needs.push.outputs.image }}
+          kind load docker-image ${{ needs.push.outputs.image }}
+      - name: Apply manifests
+        run: |
+          sed -i "s|__IMAGE__|${{ needs.push.outputs.image }}|" k8s/deployment.yaml
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+      - name: Wait for rollout to finish
+        run: kubectl rollout status deployment/session17-python --timeout=120s
+      - name: Smoke test
+        run: |
+          kubectl get pods,svc
+          kubectl port-forward service/session17-python 5001:80 &
+          sleep 5
+          curl -sf http://localhost:5001/health
+          curl -sf http://localhost:5001/api/status
