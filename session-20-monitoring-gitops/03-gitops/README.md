@@ -186,7 +186,7 @@ kubectl get deployment session20-gitops-app -n session20-gitops -w
 
 ![Git diff and the deployment growing to 3/3](screenshots/image%20copy%205.png)
 
-![Argo CD showing 3 pods and the new sync](screenshots/image%20copy%206.png)
+
 
 **Observation:** The change made in Git reached the cluster without any `kubectl apply`. That is continuous delivery through reconciliation.
 
@@ -212,7 +212,7 @@ kubectl annotate application session20-gitops-app -n argocd argocd.argoproj.io/r
 kubectl get deployment session20-gitops-app -n session20-gitops -w
 ```
 
-![Git revert and the deployment returning to 2 replicas](screenshots/image%20copy%208.png)
+![Git revert and the deployment returning to 2 replicas]
 
 **Observation:** A rollback is just another commit. Reverting the scale-up commit brought the replicas back to 2.
 
