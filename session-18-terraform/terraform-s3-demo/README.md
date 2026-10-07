@@ -155,10 +155,6 @@ aws s3api get-public-access-block --bucket shubham-10316-session18-demo
 
 ![Bucket verified with the AWS CLI](screenshots/image%20copy%208.png)
 
-You can also check the S3 console in the browser.
-
-![Bucket in the S3 console](screenshots/image%20copy%209.png)
-
 **Observation:** The CLI shows the same name, region, tags and all four public access settings set to `true` that Terraform created.
 
 ### 9. terraform destroy
