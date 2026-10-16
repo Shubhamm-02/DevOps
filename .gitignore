@@ -22,3 +22,6 @@ terraform.tfvars
 
 # Secrets
 .env
+
+# Separate repositories kept nearby (not part of this homework repo)
+hmm/
